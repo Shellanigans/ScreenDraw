@@ -1,3 +1,6 @@
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
 Try{
     Add-Type -Namespace "User" -Name "Keys" -MemberDefinition '
         [DllImport("user32.dll")]
@@ -15,16 +18,18 @@ $ControllerTable.RightClick = $false
 
 $ControllerForm = [System.Windows.Forms.Form]::new()
 $ControllerForm.Text = "Screen Draw"
-$ControllerForm.TopMost = $True
+#$ControllerForm.TopMost = $True
 $ControllerForm.MaximizeBox = $false
 $ControllerForm.FormBorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-$ControllerForm.Height = 579
-$ControllerForm.Width = 306
+$ControllerForm.Height = 600
+$ControllerForm.Width = 316
+
+$ColorDialog = [System.Windows.Forms.ColorDialog]::new()
 
 $ActiveList = [System.Windows.Forms.ListBox]::new()
 $ActiveList.Location = [System.Drawing.Size]::new(5,10)
 $ActiveList.Width = 160
-$ActiveList.Height = 189
+$ActiveList.Height = 218
 $ActiveList.ScrollAlwaysVisible = $true
 $ActiveList.Parent = $ControllerForm
 
@@ -68,9 +73,10 @@ $FreeHand.Text = "Pencil"
 $FreeHand.Size = $ClearAll.Size
 $FreeHand.Width = $ClearAll.Width/2
 $FreeHand.Left = $ClearAll.Location.X
-$FreeHand.Top = $ClearAll.Top+$ClearAll.Height+1
+$FreeHand.Top = $ClearAll.Top+$ClearAll.Height+5
 $FreeHand.Add_Click({
     $This.Parent.Opacity = 0.25
+    $SafetyScreen.Show()
 
     $FreeDrawRunspace = [RunspaceFactory]::CreateRunspace()
     $FreeDrawRunspace.Open()
@@ -91,11 +97,11 @@ $FreeHand.Add_Click({
     $FreeDrawJob=$FreeDrawPosh.BeginInvoke()
 
     $Pen = [System.Drawing.Pen]::new($FreeHandColor.BackColor)
-    $Pen.Width = 5
+    $Pen.Width = $FreeHandSize.Value
 
     While(!$ControllerTable.RightClick){
         $Points = [System.Drawing.Point[]]@()
-        Sleep -Milliseconds 50
+        [System.Threading.Thread]::Sleep(100)
         $LastPos = [System.Windows.Forms.Cursor]::Position
         While($ControllerTable.LeftClick){
             $CurrPos = [System.Windows.Forms.Cursor]::Position
@@ -116,12 +122,27 @@ $FreeHand.Add_Click({
         }
     }
 
+    $FreeDrawPosh.EndInvoke($FreeDrawJob)
+    $FreeDrawRunspace.Close()
+
     $ControllerTable.RightClick = $false
     $ControllerTable.LeftClick = $false
 
-    [Void]$FreeDrawPosh.EndInvoke($FreeDrawJob)
-    $FreeDrawRunspace.Close()
+    Try{
+        #$ActiveList.Items.RemoveAt($ActiveList.SelectedIndex)
 
+        $ActiveList.Items | %{$DrawingForm.Refresh()}{
+            $ObjId = [String]$_
+            $InputArgs = $ControllerTable.$ObjId
+            $Cmd = $InputArgs | %{$Count = 0}{'$InputArgs['+$Count+'],';$Count++}
+            $Cmd = $Cmd -join ''
+            $Cmd = $Cmd.TrimEnd(',')+')'
+            $Cmd = '$Jraphics.'+($ObjId.Split()[-1]).Replace("FreeHand","DrawLines")+'('+$Cmd
+            [Void][ScriptBlock]::Create($Cmd).Invoke()
+        }
+    }Catch{}
+
+    $SafetyScreen.Hide()
     $This.Parent.Opacity = 1
 })
 $FreeHand.Parent = $ControllerForm
@@ -134,30 +155,80 @@ $FreeHandColor.Top = $FreeHand.Top
 $FreeHandColor.BackColor = [System.Drawing.Color]::Black
 $FreeHandColor.ForeColor = [System.Drawing.Color]::White
 $FreeHandColor.Add_Click({
-    $ColorDialog = [System.Windows.Forms.ColorDialog]::new()
-    $ColorDialog.ShowDialog()
-    $This.BackColor = $ColorDialog.Color
-    $Lum = [Math]::Sqrt(
-        $This.BackColor.R * $This.BackColor.R * 0.299 +
-        $This.BackColor.G * $This.BackColor.G * 0.587 +
-        $This.BackColor.B * $This.BackColor.B * 0.114
-    )
-    If($Lum -gt 130){
-        $This.ForeColor = [System.Drawing.Color]::Black
-    }Else{
-        $This.ForeColor = [System.Drawing.Color]::White
+    If($ColorDialog.ShowDialog() -eq 'OK'){
+        $This.BackColor = $ColorDialog.Color
+        $Lum = [Math]::Sqrt(
+            $This.BackColor.R * $This.BackColor.R * 0.299 +
+            $This.BackColor.G * $This.BackColor.G * 0.587 +
+            $This.BackColor.B * $This.BackColor.B * 0.114
+        )
+        If($Lum -gt 130){
+            $This.ForeColor = [System.Drawing.Color]::Black
+        }Else{
+            $This.ForeColor = [System.Drawing.Color]::White
+        }
     }
     $This.Parent.Focus()
 })
 $FreeHandColor.Parent = $ControllerForm
 
+$FreeHandSize = [System.windows.Forms.NumericUpDown]::new()
+$FreeHandSize.Maximum = 65536
+$FreeHandSize.Minimum = 1
+$FreeHandSize.Value = 5
+$FreeHandSize.Width = $Remove.Width/2
+$FreeHandSize.Left = $Remove.Left+$FreeHand.Width-1
+$FreeHandSize.Top = $FreeHand.Bottom+2
+#$FreeHandSize.BackColor = [System.Drawing.Color]::Black
+#$FreeHandSize.ForeColor = [System.Drawing.Color]::White
+#$FreeHandSize.Add_Click({
+    #$ColorDialog = [System.Windows.Forms.ColorDialog]::new()
+    #$ColorDialog.ShowDialog()
+    #$This.BackColor = $ColorDialog.Color
+    #$Lum = [Math]::Sqrt(
+    #    $This.BackColor.R * $This.BackColor.R * 0.299 +
+    #    $This.BackColor.G * $This.BackColor.G * 0.587 +
+    #    $This.BackColor.B * $This.BackColor.B * 0.114
+    #)
+    #If($Lum -gt 130){
+    #    $This.ForeColor = [System.Drawing.Color]::Black
+    #}Else{
+    #    $This.ForeColor = [System.Drawing.Color]::White
+    #}
+    #$This.Parent.Focus()
+#})
+$FreeHandSize.Parent = $ControllerForm
+
+$FreeHandSizeLabel = [System.windows.Forms.Label]::new()
+$FreeHandSizeLabel.Text = "Size:"
+$FreeHandSizeLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$FreeHandSizeLabel.Height = $Remove.Height
+$FreeHandSizeLabel.Width = $Remove.Width/2
+$FreeHandSizeLabel.Left = $FreeHand.Left
+$FreeHandSizeLabel.Top = $FreeHand.Bottom
+$FreeHandSizeLabel.Parent = $ControllerForm
+
 $Draw = [System.Windows.Forms.Button]::new()
-$Draw.Text = "Draw --->"
+$Draw.Text = "Draw Obj"
 $Draw.Width = $Remove.Width
 $Draw.Left = $Remove.Left
-$Draw.Top = $FreeHand.Top+$FreeHand.Height+1
+$Draw.Top = $FreeHandSize.Bottom+5
 $Draw.Add_Click({
     Try{
+        Try{
+            #$ActiveList.Items.RemoveAt($ActiveList.SelectedIndex)
+
+            $ActiveList.Items | %{$DrawingForm.Refresh()}{
+                $ObjId = [String]$_
+                $InputArgs = $ControllerTable.$ObjId
+                $Cmd = $InputArgs | %{$Count = 0}{'$InputArgs['+$Count+'],';$Count++}
+                $Cmd = $Cmd -join ''
+                $Cmd = $Cmd.TrimEnd(',')+')'
+                $Cmd = '$Jraphics.'+($ObjId.Split()[-1]).Replace("FreeHand","DrawLines")+'('+$Cmd
+                [Void][ScriptBlock]::Create($Cmd).Invoke()
+            }
+        }Catch{}
+
         $Points = $false
         $Split = $false
         $Prev = $null
@@ -263,12 +334,12 @@ $XCoord.Add_ValueChanged({
     $PH = [System.Windows.Forms.Cursor]::Position
 
     $Bounds = [System.Drawing.Rectangle]::new($PH.X-7,$PH.Y-7,15,15)
-    $BMP = [System.Drawing.Bitmap]::new($Bounds.Width, $Bounds.Height)
+    #$BMP = [System.Drawing.Bitmap]::new($Bounds.Width, $Bounds.Height)
     ([System.Drawing.Graphics]::FromImage($BMP)).CopyFromScreen($Bounds.Location, [System.Drawing.Point]::Empty, $Bounds.Size)
 
-    $BMPBig = [System.Drawing.Bitmap]::new(128, 128)
-    $GraphicsBig = [System.Drawing.Graphics]::FromImage($BMPBig)
-    $GraphicsBig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+    #$BMPBig = [System.Drawing.Bitmap]::new(128, 128)
+    #$GraphicsBig = [System.Drawing.Graphics]::FromImage($BMPBig)
+    #$GraphicsBig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
     $GraphicsBig.DrawImage($BMP,1,7,128,128)
     $ZoomBox.BackgroundImage = $BMPBig
     $ControllerForm.Refresh()
@@ -295,12 +366,12 @@ $YCoord.Add_ValueChanged({
     $PH = [System.Windows.Forms.Cursor]::Position
 
     $Bounds = [System.Drawing.Rectangle]::new($PH.X-7,$PH.Y-7,15,15)
-    $BMP = [System.Drawing.Bitmap]::new($Bounds.Width, $Bounds.Height)
+    #$BMP = [System.Drawing.Bitmap]::new($Bounds.Width, $Bounds.Height)
     ([System.Drawing.Graphics]::FromImage($BMP)).CopyFromScreen($Bounds.Location, [System.Drawing.Point]::Empty, $Bounds.Size)
 
-    $BMPBig = [System.Drawing.Bitmap]::new(128, 128)
-    $GraphicsBig = [System.Drawing.Graphics]::FromImage($BMPBig)
-    $GraphicsBig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+    #$BMPBig = [System.Drawing.Bitmap]::new(128, 128)
+    #$GraphicsBig = [System.Drawing.Graphics]::FromImage($BMPBig)
+    #$GraphicsBig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
     $GraphicsBig.DrawImage($BMP,1,7,128,128)
     $ZoomBox.BackgroundImage = $BMPBig
     $ControllerForm.Refresh()
@@ -323,19 +394,15 @@ $MouseTrack.Height = 30
 $MouseTrack.Left = $ZoomBox.Left+1
 $MouseTrack.Top = $YCoord.Top+$YCoord.Height+7
 $MouseTrack.Add_MouseMove({
-    If([System.Windows.Forms.UserControl]::MouseButtons.ToString() -match 'Left'){
+    If($_.Button -eq [System.Windows.Forms.MouseButtons]::Left){
         $PH = [System.Windows.Forms.Cursor]::Position
 
         $XCoord.Value = $PH.X
         $YCoord.Value = $PH.Y
 
         $Bounds = [System.Drawing.Rectangle]::new($PH.X-7,$PH.Y-7,15,15)
-        $BMP = [System.Drawing.Bitmap]::new($Bounds.Width, $Bounds.Height)
         ([System.Drawing.Graphics]::FromImage($BMP)).CopyFromScreen($Bounds.Location, [System.Drawing.Point]::Empty, $Bounds.Size)
 
-        $BMPBig = [System.Drawing.Bitmap]::new(128, 128)
-        $GraphicsBig = [System.Drawing.Graphics]::FromImage($BMPBig)
-        $GraphicsBig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
         $GraphicsBig.DrawImage($BMP,1,7,128,128)
         $ZoomBox.BackgroundImage = $BMPBig
 
@@ -358,10 +425,10 @@ $MouseTrack.Add_MouseMove({
 $MouseTrack.Parent = $ControllerForm
 
 $PassiveList = [System.Windows.Forms.ListBox]::new()
-$PassiveList.Left = 100
-$PassiveList.Top = 225
-$PassiveList.Height = 70
-$PassiveList.Width = 195
+$PassiveList.Left = $Remove.Right+7
+$PassiveList.Top = $MouseTrack.Bottom+11
+$PassiveList.Height = $Draw.Bottom-$Remove.Top
+$PassiveList.Width = $ControllerForm.ClientRectangle.Width-$PassiveList.Left
 $PassiveList.ScrollAlwaysVisible = $true
 $PassiveList.Add_SelectedIndexChanged({
     Try{$BigPanel.Controls.Clear()}Catch{}
@@ -388,18 +455,18 @@ $PassiveList.Add_SelectedIndexChanged({
                     $Color.Left = $OffSetX
                     $Color.Top+=$OffSetY
                     $Color.Add_Click({
-                        $ColorDialog = [System.Windows.Forms.ColorDialog]::new()
-                        $ColorDialog.ShowDialog()
-                        $This.BackColor = $ColorDialog.Color
-                        $Lum = [Math]::Sqrt(
-                            $This.BackColor.R * $This.BackColor.R * 0.299 +
-                            $This.BackColor.G * $This.BackColor.G * 0.587 +
-                            $This.BackColor.B * $This.BackColor.B * 0.114
-                        )
-                        If($Lum -gt 130){
-                            $This.ForeColor = [System.Drawing.Color]::Black
-                        }Else{
-                            $This.ForeColor = [System.Drawing.Color]::White
+                        If($ColorDialog.ShowDialog() -eq 'OK'){
+                            $This.BackColor = $ColorDialog.Color
+                            $Lum = [Math]::Sqrt(
+                                $This.BackColor.R * $This.BackColor.R * 0.299 +
+                                $This.BackColor.G * $This.BackColor.G * 0.587 +
+                                $This.BackColor.B * $This.BackColor.B * 0.114
+                            )
+                            If($Lum -gt 130){
+                                $This.ForeColor = [System.Drawing.Color]::Black
+                            }Else{
+                                $This.ForeColor = [System.Drawing.Color]::White
+                            }
                         }
                         $This.Parent.Select()
                     })
@@ -413,18 +480,18 @@ $PassiveList.Add_SelectedIndexChanged({
                     $Color.Left = $OffSetX
                     $Color.Top+=$OffSetY
                     $Color.Add_Click({
-                        $ColorDialog = [System.Windows.Forms.ColorDialog]::new()
-                        $ColorDialog.ShowDialog()
-                        $This.BackColor = $ColorDialog.Color
-                        $Lum = [Math]::Sqrt(
-                            $This.BackColor.R * $This.BackColor.R * 0.299 +
-                            $This.BackColor.G * $This.BackColor.G * 0.587 +
-                            $This.BackColor.B * $This.BackColor.B * 0.114
-                        )
-                        If($Lum -gt 130){
-                            $This.ForeColor = [System.Drawing.Color]::Black
-                        }Else{
-                            $This.ForeColor = [System.Drawing.Color]::White
+                        If($ColorDialog.ShowDialog() -eq 'OK'){
+                            $This.BackColor = $ColorDialog.Color
+                            $Lum = [Math]::Sqrt(
+                                $This.BackColor.R * $This.BackColor.R * 0.299 +
+                                $This.BackColor.G * $This.BackColor.G * 0.587 +
+                                $This.BackColor.B * $This.BackColor.B * 0.114
+                            )
+                            If($Lum -gt 130){
+                                $This.ForeColor = [System.Drawing.Color]::Black
+                            }Else{
+                                $This.ForeColor = [System.Drawing.Color]::White
+                            }
                         }
                         $This.Parent.Select()
                     })
@@ -482,22 +549,24 @@ $PassiveList.Add_SelectedIndexChanged({
                     $Point.Left = $OffSetX
                     $Point.Top+=$OffSetY
                     $Point.Add_MouseUp({
+                        $brush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::Red)
+                        $Jraphics.FillEllipse($brush,([System.Windows.Forms.Cursor]::Position.X-5),([System.Windows.Forms.Cursor]::Position.Y-5),10,10)
                         $This.Text = ($This.Text -replace "\d","" -replace ",","" -replace "=","")+"="+[System.Windows.Forms.Cursor]::Position.ToString().Trim("{}").Replace("X=","").Replace("Y=","")
                     })
                     $Point.Add_MouseMove({
-                        If([System.Windows.Forms.UserControl]::MouseButtons.ToString() -match 'Left'){
+                        If($_.Button -eq [System.Windows.Forms.MouseButtons]::Left){
                             $PH = [System.Windows.Forms.Cursor]::Position
 
                             $XCoord.Value = $PH.X
                             $YCoord.Value = $PH.Y
 
                             $Bounds = [System.Drawing.Rectangle]::new($PH.X-7,$PH.Y-7,15,15)
-                            $BMP = [System.Drawing.Bitmap]::new($Bounds.Width, $Bounds.Height)
+                            #$BMP = [System.Drawing.Bitmap]::new($Bounds.Width, $Bounds.Height)
                             ([System.Drawing.Graphics]::FromImage($BMP)).CopyFromScreen($Bounds.Location, [System.Drawing.Point]::Empty, $Bounds.Size)
 
-                            $BMPBig = [System.Drawing.Bitmap]::new(128, 128)
-                            $GraphicsBig = [System.Drawing.Graphics]::FromImage($BMPBig)
-                            $GraphicsBig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+                            #$BMPBig = [System.Drawing.Bitmap]::new(128, 128)
+                            #$GraphicsBig = [System.Drawing.Graphics]::FromImage($BMPBig)
+                            #$GraphicsBig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
                             $GraphicsBig.DrawImage($BMP,1,7,128,128)
                             $ZoomBox.BackgroundImage = $BMPBig
 
@@ -566,22 +635,24 @@ $PassiveList.Add_SelectedIndexChanged({
                         $Point.Left = $This.Left
                         $Point.Top+=$TempOffsetY
                         $Point.Add_MouseUp({
+                            $brush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::Red)
+                            $Jraphics.FillEllipse($brush,([System.Windows.Forms.Cursor]::Position.X-5),([System.Windows.Forms.Cursor]::Position.Y-5),10,10)
                             $This.Text = ($This.Text -replace "\d","" -replace ",","" -replace "=","")+"="+[System.Windows.Forms.Cursor]::Position.ToString().Trim("{}").Replace("X=","").Replace("Y=","")
                         })
                         $Point.Add_MouseMove({
-                            If([System.Windows.Forms.UserControl]::MouseButtons.ToString() -match 'Left'){
+                            If($_.Button -eq [System.Windows.Forms.MouseButtons]::Left){
                                 $PH = [System.Windows.Forms.Cursor]::Position
 
                                 $XCoord.Value = $PH.X
                                 $YCoord.Value = $PH.Y
 
                                 $Bounds = [System.Drawing.Rectangle]::new($PH.X-7,$PH.Y-7,15,15)
-                                $BMP = [System.Drawing.Bitmap]::new($Bounds.Width, $Bounds.Height)
+                                #$BMP = [System.Drawing.Bitmap]::new($Bounds.Width, $Bounds.Height)
                                 ([System.Drawing.Graphics]::FromImage($BMP)).CopyFromScreen($Bounds.Location, [System.Drawing.Point]::Empty, $Bounds.Size)
 
-                                $BMPBig = [System.Drawing.Bitmap]::new(128, 128)
-                                $GraphicsBig = [System.Drawing.Graphics]::FromImage($BMPBig)
-                                $GraphicsBig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+                                #$BMPBig = [System.Drawing.Bitmap]::new(128, 128)
+                                #$GraphicsBig = [System.Drawing.Graphics]::FromImage($BMPBig)
+                                #$GraphicsBig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
                                 $GraphicsBig.DrawImage($BMP,1,7,128,128)
                                 $ZoomBox.BackgroundImage = $BMPBig
 
@@ -635,9 +706,9 @@ $PassiveList.Add_SelectedIndexChanged({
 $PassiveList.Parent = $ControllerForm
 
 $BigPanel = [System.Windows.Forms.Panel]::new()
-$BigPanel.Top = 300
+$BigPanel.Top = $draw.Bottom+10
 $BigPanel.Width = 300
-$BigPanel.Height = 250
+$BigPanel.Height = $ControllerForm.ClientRectangle.Bottom-$bigPanel.Top
 $BigPanel.AutoScroll = $true
 $BigPanel.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 $BigPanel.Parent = $ControllerForm
@@ -666,6 +737,18 @@ $DrawlingCapes = $DrawlingCapes.Split([System.Environment]::NewLine).Where({$_})
 $DrawlingCapes.ForEach({[Void]$PassiveList.Items.Add($_.Split(',')[0])})
 $PassiveList.SelectedIndex = 0
 
+# This is just used to prevent you from clicking other windows while drawlign with the pencil
+#  We can't use the actual form that renders the freehand because when you change opacity or the background or the transparency key, it redraws the form.
+$SafetyScreen = [System.Windows.Forms.Form]::new()
+$SafetyScreen.FormBorderStyle = [System.Windows.Forms.BorderStyle]::None
+$SafetyScreen.ShowInTaskbar = $false
+$SafetyScreen.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+$SafetyScreen.Size = [System.Drawing.Size]::new(5000,5000)
+$SafetyScreen.Location = [System.Drawing.Point]::new(0,0)
+$SafetyScreen.BackColor = [System.Drawing.Color]::Black
+$SafetyScreen.TopMost = $true
+$SafetyScreen.Opacity = 0.25
+
 $DrawingForm = [System.Windows.Forms.Form]::new()
 $DrawingForm.FormBorderStyle = [System.Windows.Forms.BorderStyle]::None
 $DrawingForm.ShowInTaskbar = $false
@@ -690,13 +773,26 @@ $Pow.Runspace = $Run
 
     $DF.Show()
     While(!$CT.Kill){
-        Sleep -Milliseconds 25
+        Sleep -Milliseconds 100
     }
     $DF.Close()
 })
 [Void]$Pow.AddParameter('DF',[ref]$DrawingForm)
 [Void]$Pow.AddParameter('CT',$ControllerTable)
 $Job=$Pow.BeginInvoke()
+
+# Needed to optimize the click and drag button
+$ControllerForm.Show()
+
+$Bounds = [System.Drawing.Rectangle]::new($ControllerForm.Location.X-7,$ControllerForm.Location.Y-7,15,15)
+$BMP = [System.Drawing.Bitmap]::new($Bounds.Width, $Bounds.Height)
+([System.Drawing.Graphics]::FromImage($BMP)).CopyFromScreen($Bounds.Location, [System.Drawing.Point]::Empty, $Bounds.Size)
+
+$BMPBig = [System.Drawing.Bitmap]::new(128, 128)
+$GraphicsBig = [System.Drawing.Graphics]::FromImage($BMPBig)
+$GraphicsBig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+
+$ControllerForm.Hide()
 
 $ControllerForm.ShowDialog()
 $ControllerTable.Kill = $true
